@@ -123,10 +123,11 @@ timer_sleep (int64_t ticks)
   ts.ticks_wake = timer_ticks() + ticks;
   sema_init(&ts.sleep_wait, 0);
 
-  list_insert_ordered(&sleep_list, &ts.sleep_elem, thread_less_ticks, NULL);
+  list_insert_ordered(&sleep_list, &ts.sleep_elem, (list_less_func *) &thread_less_ticks, NULL);
   sema_down(&ts.sleep_wait);
 
   /* int64_t start = timer_ticks ();
+   *
   printf(">>>> now sleeping thread %s", thread_current()->name);
 
   ASSERT (intr_get_level () == INTR_ON);*/
