@@ -83,6 +83,14 @@ timer_ticks (void)
   return t;
 }
 
+/* Helper function to compare wake-up times of two threads in list. */
+static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux) {
+  (void) aux;
+  struct thread *t_a = list_entry(a, struct thread, elem);
+  struct thread *t_b = list_entry(b, struct thread, elem);
+  return &t_a->wake_up_tick < &t_b->wake_up_tick;
+}
+
 /* Returns the number of timer ticks elapsed since THEN, which
    should be a value once returned by timer_ticks(). */
 int64_t
@@ -102,7 +110,7 @@ timer_sleep (int64_t ticks)
 
   struct thread *curr = thread_current();
 
-  intr_disable();
+  enum intr_level old_level = intr_disable();
 
   curr->wake_up_tick = timer_ticks() + ticks;
 
@@ -110,7 +118,7 @@ timer_sleep (int64_t ticks)
 
   thread_block();
 
-  intr_enable();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -197,12 +205,12 @@ timer_interrupt (struct intr_frame *args UNUSED)
   thread_tick();
 
   /*Wake up sleeping threads that reached wake-up time */
-  struct list_elem *e = list_begin(&sleep_list);
+//  struct list_elem *e = list_begin(&sleep_list);
   /* Scan through the sleep_list */
-  while (e != list_end(&sleep_list)) {
+  while (!list_empty(&sleep_list)) {
+    struct list_elem *e = list_begin(&sleep_list);
     struct thread *t = list_entry(e, struct thread, elem);
-    if (t->wake_up_tick <= timer_ticks()) {
-      e = list_next(e);
+    if (t->wake_up_tick <= ticks) {
       list_remove(&t->elem);
       thread_unblock(t);
     } else {
@@ -211,13 +219,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   }
 }
 
-/* Helper function to compare wake-up times of two threads in list. */
-static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux) {
-  (void) aux;
-  struct thread *t_a = list_entry(a, struct thread, elem);
-  struct thread *t_b = list_entry(b, struct thread, elem);
-  return &t_a->wake_up_tick < &t_b->wake_up_tick;
-}
+
 
 /* Returns true if LOOPS iterations waits for more than one timer
    tick, otherwise false. */
