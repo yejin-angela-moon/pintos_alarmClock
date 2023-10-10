@@ -84,11 +84,10 @@ timer_ticks (void)
 }
 
 /* Helper function to compare wake-up times of two threads in list. */
-static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux) {
-  (void) aux;
+static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
   struct thread *t_a = list_entry(a, struct thread, elem);
   struct thread *t_b = list_entry(b, struct thread, elem);
-  return &t_a->wake_up_tick < &t_b->wake_up_tick;
+  return t_a->wake_up_tick < t_b->wake_up_tick;
 }
 
 /* Returns the number of timer ticks elapsed since THEN, which
@@ -104,21 +103,23 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  if (ticks <= 0 || is_current_thread_idle()) {
-    return;
+  ASSERT(intr_get_level() == INTR_ON);
+
+  int64_t start = timer_ticks();
+
+  if (timer_elapsed(start) < ticks) {
+    enum intr_level old_level = intr_disable();
+    struct thread *curr = thread_current();
+
+    curr->wake_up_tick = start + ticks;
+
+    list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *) &thread_less_ticks, NULL);
+
+    thread_block();
+
+    intr_set_level(old_level);
   }
 
-  struct thread *curr = thread_current();
-
-  enum intr_level old_level = intr_disable();
-
-  curr->wake_up_tick = timer_ticks() + ticks;
-
-  list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *) &thread_less_ticks, NULL);
-
-  thread_block();
-
-  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -210,12 +211,11 @@ timer_interrupt (struct intr_frame *args UNUSED)
   while (!list_empty(&sleep_list)) {
     struct list_elem *e = list_begin(&sleep_list);
     struct thread *t = list_entry(e, struct thread, elem);
-    if (t->wake_up_tick <= ticks) {
-      list_remove(&t->elem);
-      thread_unblock(t);
-    } else {
+    if (ticks < t->wake_up_tick) {
       break;
     }
+    list_remove(e);
+    thread_unblock(t);
   }
 }
 
