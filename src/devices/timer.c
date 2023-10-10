@@ -17,12 +17,12 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
-static struct thread_sleep {
-    struct thread *thread;          /* Thread going to sleep */
-    struct semaphore sleep_wait;    /* Semaphore for thread going to sleep */
-    int64_t ticks_wake;             /* Tick value to wake the thread */
-    struct list_elem sleep_elem;     /* List element for sleep_list */
-};
+//static struct thread_sleep {
+//    struct thread *thread;          /* Thread going to sleep */
+//    struct semaphore sleep_wait;    /* Semaphore for thread going to sleep */
+//    int64_t ticks_wake;             /* Tick value to wake the thread */
+//    struct list_elem sleep_elem;     /* List element for sleep_list */
+//};
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -36,8 +36,9 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b);
+static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
 
+/* The list of sleeping threads */
 static struct list sleep_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
@@ -97,40 +98,34 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-static void
-wake_sleeping_thread(void) {
-  struct list_elem *e = list_begin(&sleep_list);
-  while (e != list_end(&sleep_list)) {
-    struct thread_sleep *ts = list_entry(e, struct thread_sleep, sleep_elem);
-    
-    if (ts->ticks_wake <= timer_ticks()) {
-      e = list_remove(e);
-      sema_up(&ts->sleep_wait);
-    } else {
-      break;
-    }
-  }
-}
-
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
-  struct thread_sleep ts;
-  
-  ts.thread = thread_current();
-  ts.ticks_wake = timer_ticks() + ticks;
-  sema_init(&ts.sleep_wait, 0);
+  int64_t start = timer_ticks ();
 
-  list_insert_ordered(&sleep_list, &ts.sleep_elem, (list_less_func *) &thread_less_ticks, NULL);
-  sema_down(&ts.sleep_wait);
+  struct thread *curr = thread_current();
 
-  /* int64_t start = timer_ticks ();
-   *
-  printf(">>>> now sleeping thread %s", thread_current()->name);
+  intr_disable();
 
-  ASSERT (intr_get_level () == INTR_ON);*/
+  /* Move thread to the sleep queue. If there is time left till
+   * the wakeup, remove the caller thread from ready_list */
+  if (timer_elapsed(start) < ticks) {
+    struct list_elem *removed = list_remove(&curr->allelem);
+    list_insert_ordered(&sleep_list, removed, (list_less_func *) &thread_less_ticks, NULL);
+    curr->wake_up_tick = start + ticks;
+  }
+
+  /* If the current thread is not idle_thread, change the state of
+  the caller thread to THREAD_BLOCKED, store the local tick to
+  wake up, update the global tick if necessary, and call schedule().
+  Disable interrupts when manipulating thread list. */
+  if (is_current_thread_idle()) {
+    thread_block();
+    curr->wake_up_tick = ticks;
+    schedule_wrapper();
+  }
 
 }
 
@@ -208,19 +203,37 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  /* Determine which threads to wake up everytime when timer
+  interrupt occurs. For the threads to wake up, remove them
+  from the sleep queue and insert into ready_list, also
+  changing the state from sleep to ready. */
+
+  /* Update teh CPU usage for running process. */
   ticks++;
   thread_tick();
 
   /*Wake up sleeping threads that reached wake-up time */
-  wake_sleeping_thread();
+  struct list_elem *e = list_begin(&sleep_list);
+  /* Scan through the sleep_list */
+  while (e != list_end(&sleep_list)) {
+    struct thread *t = list_entry(e, struct thread, allelem);
+
+    if (t->wake_up_tick <= timer_ticks()) {
+      e = list_remove(e);
+      list_push_back(&sleep_list, e);
+      thread_unblock(t);
+    } else {
+      break;
+    }
+  }
 
 }
 
-/* Compare wake-up time of two threads in list. */
-static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b) {
-  struct thread *t_a = list_entry(a, struct thread, sleep_elem);
-  struct thread *t_b = list_entry(b, struct thread, sleep_elem);
-  return t_a->wake_up_time < t_b->wake_up_time;
+/* Helper function to compare wake-up times of two threads in list. */
+static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux) {
+  struct thread *t_a = list_entry(a, struct thread, allelem);
+  struct thread *t_b = list_entry(b, struct thread, allelem);
+  return t_a->wake_up_tick < t_b->wake_up_tick;
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
