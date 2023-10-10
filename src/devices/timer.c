@@ -111,7 +111,7 @@ timer_sleep (int64_t ticks)
 
   intr_disable();
 
-  curr->wake_up_tick = timer_ticks() + ticks;
+  &curr->wake_up_tick = timer_ticks() + ticks;
 
   list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *) &thread_less_ticks, NULL);
 
@@ -209,7 +209,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   /* Scan through the sleep_list */
   while (e != list_end(&sleep_list)) {
     struct thread *t = list_entry(e, struct thread, elem);
-    if (t->wake_up_tick <= timer_ticks()) {
+    if (&t->wake_up_tick <= timer_ticks()) {
       e = list_next(e);
       list_remove(&t->elem);
       thread_unblock(t);
@@ -225,7 +225,7 @@ static bool thread_less_ticks(const struct list_elem *a, const struct list_elem 
   (void) aux;
   struct thread *t_a = list_entry(a, struct thread, elem);
   struct thread *t_b = list_entry(b, struct thread, elem);
-  return t_a->wake_up_tick < t_b->wake_up_tick;
+  return &t_a->wake_up_tick < &t_b->wake_up_tick;
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
