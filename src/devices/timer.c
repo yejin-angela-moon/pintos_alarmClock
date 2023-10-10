@@ -209,7 +209,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
       break;
     }
   }
-
 }
 
 /* Helper function to compare wake-up times of two threads in list. */
