@@ -103,29 +103,21 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if (ticks <= 0 || is_current_thread_idle()) {
+    return;
+  }
 
   struct thread *curr = thread_current();
 
   intr_disable();
 
-  /* Move thread to the sleep queue. If there is time left till
-   * the wakeup, remove the caller thread from ready_list */
-  if (timer_elapsed(start) < ticks) {
-    struct list_elem *removed = list_remove(&curr->allelem);
-    list_insert_ordered(&sleep_list, removed, (list_less_func *) &thread_less_ticks, NULL);
-    curr->wake_up_tick = start + ticks;
-  }
+  curr->wake_up_tick = timer_ticks() + ticks;
 
-  /* If the current thread is not idle_thread, change the state of
-  the caller thread to THREAD_BLOCKED, store the local tick to
-  wake up, update the global tick if necessary, and call schedule().
-  Disable interrupts when manipulating thread list. */
-  if (is_current_thread_idle()) {
-    thread_block();
-    curr->wake_up_tick = ticks;
-    schedule_wrapper();
-  }
+  list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *) &thread_less_ticks, NULL);
+
+  thread_block();
+
+  intr_enable();
 
 }
 
@@ -208,7 +200,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   from the sleep queue and insert into ready_list, also
   changing the state from sleep to ready. */
 
-  /* Update teh CPU usage for running process. */
+  /* Update the CPU usage for running process. */
   ticks++;
   thread_tick();
 
@@ -216,11 +208,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
   struct list_elem *e = list_begin(&sleep_list);
   /* Scan through the sleep_list */
   while (e != list_end(&sleep_list)) {
-    struct thread *t = list_entry(e, struct thread, allelem);
-
+    struct thread *t = list_entry(e, struct thread, elem);
     if (t->wake_up_tick <= timer_ticks()) {
-      e = list_remove(e);
-      list_push_back(&sleep_list, e);
+      e = list_next(e);
+      list_remove(&t->elem);
       thread_unblock(t);
     } else {
       break;
@@ -231,8 +222,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
 /* Helper function to compare wake-up times of two threads in list. */
 static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux) {
-  struct thread *t_a = list_entry(a, struct thread, allelem);
-  struct thread *t_b = list_entry(b, struct thread, allelem);
+  (void) aux;
+  struct thread *t_a = list_entry(a, struct thread, elem);
+  struct thread *t_b = list_entry(b, struct thread, elem);
   return t_a->wake_up_tick < t_b->wake_up_tick;
 }
 
