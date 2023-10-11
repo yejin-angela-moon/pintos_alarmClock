@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include "devices/pit.h"
 #include "threads/interrupt.h"
-#include "threads/synch.h"
-#include "threads/thread.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -29,7 +27,8 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux);
+
+static list_less_func thread_less_ticks;
 
 /* The list of sleeping threads */
 static struct list sleep_list;
@@ -103,25 +102,23 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  int64_t start = timer_ticks();
+  struct thread_sleep thread;
+  /* Store the initial interrupt level for later use */
+  enum intr_level old_level;
+
   /* Asserts the interrupt is on */
   ASSERT(intr_get_level() == INTR_ON);
-  /* Stores the number of timer ticks elasped */
-  int64_t start = timer_ticks();
 
-  /* If the time has not passed too far */
-  if (timer_elapsed(start) < ticks) {
-    /* Store the current interrupt level for later use */
-    enum intr_level old_level = intr_disable();
-    struct thread *curr = thread_current();
-    curr->wake_up_tick = start + ticks;
-    /* Insert the element into the sleep_list in appropriate order */
-    list_insert_ordered(&sleep_list, &curr->elem, (list_less_func *) &thread_less_ticks, NULL);
-    /* Change the thread to blocked status, indirectly call schedule() */
-    thread_block();
-    /* Set the interrupt level back to original */
-    intr_set_level(old_level);
-  }
+  thread.thread = thread_current();
+  sema_init(&thread.sleep_wait, 0);
+  thread.ticks_wake = start + ticks;
 
+  old_level = intr_disable();
+  list_insert_ordered(&sleep_list, &thread.sleep_elem, &thread_less_ticks, NULL);
+  intr_set_level(old_level);
+
+  sema_down(&thread.sleep_wait);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -203,22 +200,27 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   /* Update the CPU usage for running process. */
-  ticks++;
-  thread_tick();
+  ++ticks;
 
-  /* Wake up sleeping threads that reached wake-up time */
-  struct list_elem *e;
-  struct thread *t;
-  /* Scan through the sleep_list until it is empty */
-  while (!list_empty(&sleep_list)) {
-    e = list_begin(&sleep_list);
-    t = list_entry(e, struct thread, elem);
-    if (ticks < t->wake_up_tick) {
-      break;
+  if (!list_empty(&sleep_list)) {
+    struct list_elem *e = list_begin(&sleep_list);
+    struct thread_sleep *t = list_entry(e, struct thread_sleep, sleep_elem);
+
+    while (t->ticks_wake <= ticks) {
+      list_pop_front(&sleep_list);
+      sema_up(&t->sleep_wait);
+      
+      if (list_empty(&sleep_list)) {
+        break;
+      }
+
+      e = list_begin(&sleep_list);
+      t = list_entry(e, struct thread_sleep, sleep_elem);
+
     }
-    list_remove(e);
-    thread_unblock(t);
   }
+
+  thread_tick();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
