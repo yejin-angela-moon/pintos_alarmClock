@@ -84,8 +84,8 @@ timer_ticks (void)
 
 /* Helper function to compare wake-up times of two threads in list. */
 static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
-  struct thread *t_a = list_entry(a, struct thread, elem);
-  struct thread *t_b = list_entry(b, struct thread, elem);
+  struct thread_sleep *t_a = list_entry(a, struct thread_sleep, sleep_elem);
+  struct thread_sleep *t_b = list_entry(b, struct thread_sleep, sleep_elem);
   return t_a->wake_up_tick < t_b->wake_up_tick;
 }
 
@@ -112,7 +112,7 @@ timer_sleep (int64_t ticks)
 
   thread.thread = thread_current();
   sema_init(&thread.sleep_wait, 0);
-  thread.ticks_wake = start + ticks;
+  thread.wake_up_tick = start + ticks;
 
   old_level = intr_disable();
   list_insert_ordered(&sleep_list, &thread.sleep_elem, &thread_less_ticks, NULL);
@@ -206,7 +206,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     struct list_elem *e = list_begin(&sleep_list);
     struct thread_sleep *t = list_entry(e, struct thread_sleep, sleep_elem);
 
-    while (t->ticks_wake <= ticks) {
+    while (t->wake_up_tick <= ticks) {
       list_pop_front(&sleep_list);
       sema_up(&t->sleep_wait);
       

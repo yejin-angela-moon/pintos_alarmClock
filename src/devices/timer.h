@@ -12,8 +12,8 @@
 
 struct thread_sleep {
   struct thread *thread;
+  int64_t wake_up_tick;
   struct semaphore sleep_wait;
-  int64_t ticks_wake;
   struct list_elem sleep_elem;
 };
 
