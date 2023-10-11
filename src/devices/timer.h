@@ -13,8 +13,8 @@
 struct thread_sleep {
   struct thread *thread; /* Thread to be sleeping */
   int64_t wake_up_tick; /* Number of ticks until wake-up */
-  struct semaphore sleep_wait;
-  struct list_elem sleep_elem;
+  struct semaphore sleep_wait; /* Semaphore to avoid race-conditions */
+  struct list_elem sleep_elem; /* List element for sleep_list */
 };
 
 void timer_init (void);
