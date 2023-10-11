@@ -10,7 +10,7 @@
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
 
-struct sleep_thread {
+struct thread_sleep {
   struct thread *thread; /* Thread to be sleeping */
   int64_t wake_up_tick; /* Number of ticks until wake-up */
   struct semaphore sleep_wait;
