@@ -461,13 +461,6 @@ is_thread (struct thread *t)
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
-/* Returns true if T is an idle thread. */
-bool
-is_current_thread_idle (void)
-{
-  return thread_current() == idle_thread;
-}
-
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
@@ -585,12 +578,6 @@ schedule (void)
   if (cur != next)
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
-}
-
-/* Wrapper function to call schedule() in an external file. */
-void
-schedule_wrapper (void) {
-  schedule();
 }
 
 /* Returns a tid to use for a new thread. */
