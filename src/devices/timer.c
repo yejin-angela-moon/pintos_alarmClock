@@ -200,7 +200,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   /* Update the CPU usage for running process. */
-  ++ticks;
+  ticks++;
 
   if (!list_empty(&sleep_list)) {
     struct list_elem *e = list_begin(&sleep_list);
