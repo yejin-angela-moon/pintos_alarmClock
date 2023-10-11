@@ -84,8 +84,8 @@ timer_ticks (void)
 
 /* Helper function to compare wake-up times of two threads in list. */
 static bool thread_less_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
-  struct thread_sleep *t_a = list_entry(a, struct thread_sleep, sleep_elem);
-  struct thread_sleep *t_b = list_entry(b, struct thread_sleep, sleep_elem);
+  struct sleep_thread *t_a = list_entry(a, struct sleep_thread, sleep_elem);
+  struct sleep_thread *t_b = list_entry(b, struct sleep_thread, sleep_elem);
   return t_a->wake_up_tick < t_b->wake_up_tick;
 }
 
@@ -103,22 +103,22 @@ void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks();
-  struct thread_sleep thread;
+  struct sleep_thread t;
   /* Store the initial interrupt level for later use */
   enum intr_level old_level;
 
   /* Asserts the interrupt is on */
   ASSERT(intr_get_level() == INTR_ON);
 
-  thread.thread = thread_current();
-  sema_init(&thread.sleep_wait, 0);
-  thread.wake_up_tick = start + ticks;
+  t.thread = thread_current();
+  sema_init(&t.sleep_wait, 0);
+  t.wake_up_tick = start + ticks;
 
   old_level = intr_disable();
-  list_insert_ordered(&sleep_list, &thread.sleep_elem, &thread_less_ticks, NULL);
+  list_insert_ordered(&sleep_list, &t.sleep_elem, &thread_less_ticks, NULL);
   intr_set_level(old_level);
 
-  sema_down(&thread.sleep_wait);
+  sema_down(&t.sleep_wait);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -204,7 +204,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
   if (!list_empty(&sleep_list)) {
     struct list_elem *e = list_begin(&sleep_list);
-    struct thread_sleep *t = list_entry(e, struct thread_sleep, sleep_elem);
+    struct sleep_thread *t = list_entry(e, struct sleep_thread, sleep_elem);
 
     while (t->wake_up_tick <= ticks) {
       list_pop_front(&sleep_list);
@@ -215,7 +215,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
       }
 
       e = list_begin(&sleep_list);
-      t = list_entry(e, struct thread_sleep, sleep_elem);
+      t = list_entry(e, struct sleep_thread, sleep_elem);
 
     }
   }
